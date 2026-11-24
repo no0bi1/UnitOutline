@@ -21,7 +21,6 @@ namespace
     constexpr uintptr_t kRenderWorld = 0x482D70;  // world frame render, thiscall
     constexpr uintptr_t kReleaseD3d  = 0x599900;  // runs before a device Reset, thiscall(this, int)
     constexpr uintptr_t kGxDevice    = 0xC0ED38;  // *kGxDevice is the CGxDevice, D3D device at +0x38A8
-    constexpr uintptr_t kModelDraw   = 0x58A830;  // model geometry draw, only called from the batch routines (text isn't)
     constexpr uintptr_t kBatch[6]    = { 0x70CB30, 0x70CF70, 0x70D330, 0x70D820, 0x70D8B0, 0x70D960 };
     constexpr int       kDipVtable   = 82;        // IDirect3DDevice9::DrawIndexedPrimitive
 
@@ -44,14 +43,12 @@ namespace
 
     typedef int  (__thiscall* RenderWorldFn)(void*);
     typedef void (__thiscall* ReleaseFn)(uint32_t, int);
-    typedef void (__fastcall* ModelDrawFn)(void*, uint32_t);
     typedef int  (__thiscall* BatchFn)(void*);
     typedef int  (__thiscall* Batch2Fn)(void*, uint32_t, uint32_t);
     typedef HRESULT (STDMETHODCALLTYPE* DipFn)(IDirect3DDevice9*, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
 
     RenderWorldFn origRenderWorld;
     ReleaseFn     origRelease;
-    ModelDrawFn   origModelDraw;
     uintptr_t     origBatch[6];
     DipFn         origDip;
 
@@ -91,7 +88,6 @@ namespace
     Target g_t[16];
     int    g_n;
     int    g_cur = -1;   // index into g_t while a selected model's batch is being drawn
-    bool   g_draw;       // inside that batch's geometry draw (the batch routine also draws other things)
 
     bool Valid(uint32_t p) { return p != 0 && (p & 1) == 0; }
 
@@ -242,9 +238,8 @@ namespace
 #ifdef OUTLINE_DEBUG
         ++st.stamped;
 #endif
-        DWORD blend, test;
+        DWORD blend;
         d->GetRenderState(D3DRS_ALPHABLENDENABLE, &blend);
-        d->GetRenderState(D3DRS_ALPHATESTENABLE, &test);
 
         Saved s;
         Begin(d, s, maskSurf);
@@ -258,9 +253,9 @@ namespace
         d->SetRenderState(D3DRS_ZENABLE, FALSE);
         d->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
         d->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-        if (blend && !test)                                        // translucent layer: keep only its mostly-opaque texels
+        d->SetRenderState(D3DRS_ALPHATESTENABLE, blend);           // translucent layer: keep only its mostly-opaque texels
+        if (blend)
         {
-            d->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
             d->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATER);
             d->SetRenderState(D3DRS_ALPHAREF, 0x80);
         }
@@ -271,7 +266,7 @@ namespace
         d->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
         d->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TFACTOR);
         d->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
-        d->SetTextureStageState(0, D3DTSS_ALPHAARG1, blend || test ? D3DTA_TEXTURE : D3DTA_TFACTOR);   // keep cutouts (hair, cloth edges)
+        d->SetTextureStageState(0, D3DTSS_ALPHAARG1, blend ? D3DTA_TEXTURE : D3DTA_TFACTOR);
         d->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
         d->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
         origDip(d, t, bv, mi, nv, si, pc);
@@ -358,7 +353,7 @@ namespace
     HRESULT STDMETHODCALLTYPE DipDetour(IDirect3DDevice9* d, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv, UINT si, UINT pc)
     {
         const HRESULT hr = origDip(d, t, bv, mi, nv, si, pc);
-        if (g_cur >= 0 && g_draw)
+        if (g_cur >= 0)
         {
 #ifdef OUTLINE_DEBUG
             ++st.draws;
@@ -373,19 +368,14 @@ namespace
     inline void EnterBatch(void* scene)
     {
         if (!g_n) return;
-        g_cur = Find(*reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(scene) + 0x3310));
+        const uintptr_t sc = reinterpret_cast<uintptr_t>(scene);
+        const int type = **reinterpret_cast<int**>(sc + 0x3300);   // 0/1 model geometry, 5 the model's floating text
+        if (type <= 1) g_cur = Find(*reinterpret_cast<uint32_t*>(sc + 0x3310));
 #ifdef OUTLINE_DEBUG
         ++st.batches;
-        g_type = **reinterpret_cast<int**>(reinterpret_cast<uintptr_t>(scene) + 0x3300);
-        if (g_cur >= 0) { ++st.matched; if (g_type >= 0 && g_type < 6) ++st.mt[g_type]; }
+        g_type = type;
+        if (g_cur >= 0) { ++st.matched; ++st.mt[type]; }
 #endif
-    }
-
-    void __fastcall ModelDrawDetour(void* desc, uint32_t edx)
-    {
-        g_draw = true;
-        origModelDraw(desc, edx);
-        g_draw = false;
     }
 
     template <int I> int __fastcall BatchDetour(void* scene, void*)
@@ -460,8 +450,7 @@ BOOL APIENTRY DllMain(HMODULE, DWORD reason, LPVOID)
         reinterpret_cast<void*>(&BatchDetour<3>), reinterpret_cast<void*>(&BatchDetour<4>), reinterpret_cast<void*>(&BatchDetour<5>),
     };
     bool ok = Hook(kRenderWorld, reinterpret_cast<void*>(&RenderWorldDetour), &origRenderWorld)
-           && Hook(kReleaseD3d, reinterpret_cast<void*>(&ReleaseDetour), &origRelease)
-           && Hook(kModelDraw, reinterpret_cast<void*>(&ModelDrawDetour), &origModelDraw);
+           && Hook(kReleaseD3d, reinterpret_cast<void*>(&ReleaseDetour), &origRelease);
     for (int i = 0; i < 6 && ok; ++i)
         ok = Hook(kBatch[i], detour[i], &origBatch[i]);
     return ok ? TRUE : FALSE;
