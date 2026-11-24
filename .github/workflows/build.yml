@@ -44,7 +44,7 @@ jobs:
           make -f UnitOutline.mk V=1 CXX=clang-cl LD=/usr/lib/llvm-19/bin/lld-link
           test -s UnitOutline.dll
 
-            - name: Collect release DLL
+      - name: Collect release DLL
         shell: bash
         run: |
           mkdir -p out
