@@ -1,0 +1,64 @@
+name: Build UnitOutline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Clang 19 and LLVM tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang-19 lld-19 llvm-19 make
+          sudo tee /usr/local/bin/clang-cl >/dev/null <<'WRAP'
+          #!/usr/bin/env bash
+          exec /usr/lib/llvm-19/bin/clang --driver-mode=cl "$@"
+          WRAP
+          sudo chmod +x /usr/local/bin/clang-cl
+          echo "/usr/lib/llvm-19/bin" >> "$GITHUB_PATH"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install xwin and download the x86 Windows SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo install xwin --locked
+          "$HOME/.cargo/bin/xwin" --accept-license --arch x86 splat --output ./xwinSDK
+          test -f xwinSDK/sdk/include/um/d3d9.h
+
+      - name: Build 32-bit DLL
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make -f UnitOutline.mk clean
+          make -f UnitOutline.mk V=1 CXX=clang-cl LD=/usr/lib/llvm-19/bin/lld-link
+          test -s UnitOutline.dll
+
+      - name: Build debug DLL (logs when a selected model is never drawn)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mv UnitOutline.dll UnitOutline-release.dll
+          make -f UnitOutline.mk clean
+          make -f UnitOutline.mk CXX=clang-cl LD=/usr/lib/llvm-19/bin/lld-link CXXDEFS=/DOUTLINE_DEBUG
+          mv UnitOutline.dll UnitOutline-debug.dll
+          mv UnitOutline-release.dll UnitOutline.dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UnitOutline-x86
+          path: |
+            UnitOutline.dll
+            UnitOutline-debug.dll
+            addon/UnitOutline
+          if-no-files-found: error
