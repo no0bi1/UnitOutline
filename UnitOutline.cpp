@@ -407,10 +407,11 @@ namespace
     int __fastcall RenderWorldDetour(void* self, void*)
     {
         void* L = GameContext();
-        if (Valid(reinterpret_cast<uint32_t>(L)) && L != luaState)
+        static unsigned tick;
+        if (Valid(reinterpret_cast<uint32_t>(L)) && (L != luaState || (++tick & 63) == 0))
         {
             luaState = L;
-            GameOpenLib(L, "UnitOutline", luaReg, 0);              // a UI reload makes a new Lua state
+            GameOpenLib(L, "UnitOutline", luaReg, 0);              // a UI reload wipes globals, possibly at the same state address
         }
         IDirect3DDevice9* d = Device();
         if (d && !dipHooked) HookDevice(d);
