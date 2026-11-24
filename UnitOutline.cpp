@@ -152,7 +152,8 @@ namespace
     bool g_stamped;       // mask holds this frame's silhouettes
 #ifdef OUTLINE_DEBUG
     // per-second counters, written to UnitOutline.log next to WoW.exe
-    struct Stats { unsigned frames, selected, batches, matched, draws, stamped; } st;
+    struct Stats { unsigned frames, selected, batches, matched, draws, stamped, mt[6], dt[6], prim[6]; } st;
+    int g_type;
     DWORD statTick;
 
     void Log(const char* text)
@@ -168,8 +169,10 @@ namespace
         char line[256];
         uint32_t tm = 0;
         if (g_n) tm = g_t[0].model;
-        sprintf(line, "frames=%u selected=%u batches=%u matched=%u draws=%u stamped=%u firstModel=%08X children=%d\n",
-                st.frames, st.selected, st.batches, st.matched, st.draws, st.stamped, tm, g_n);
+        sprintf(line, "frames=%u selected=%u matched=%u draws=%u model=%08X n=%d | type:matched/draws/prims 0:%u/%u/%u 1:%u/%u/%u 2:%u/%u/%u 3:%u/%u/%u 4:%u/%u/%u 5:%u/%u/%u\n",
+                st.frames, st.selected, st.matched, st.draws, tm, g_n,
+                st.mt[0], st.dt[0], st.prim[0], st.mt[1], st.dt[1], st.prim[1], st.mt[2], st.dt[2], st.prim[2],
+                st.mt[3], st.dt[3], st.prim[3], st.mt[4], st.dt[4], st.prim[4], st.mt[5], st.dt[5], st.prim[5]);
         Log(line);
         st = Stats{};
     }
@@ -359,6 +362,7 @@ namespace
         {
 #ifdef OUTLINE_DEBUG
             ++st.draws;
+            if (g_type >= 0 && g_type < 6) { ++st.dt[g_type]; st.prim[g_type] += pc; }
 #endif
             Stamp(d, t, bv, mi, nv, si, pc);
         }
@@ -372,7 +376,8 @@ namespace
         g_cur = Find(*reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(scene) + 0x3310));
 #ifdef OUTLINE_DEBUG
         ++st.batches;
-        if (g_cur >= 0) ++st.matched;
+        g_type = **reinterpret_cast<int**>(reinterpret_cast<uintptr_t>(scene) + 0x3300);
+        if (g_cur >= 0) { ++st.matched; if (g_type >= 0 && g_type < 6) ++st.mt[g_type]; }
 #endif
     }
 
