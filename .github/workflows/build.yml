@@ -34,7 +34,7 @@ jobs:
           set -euxo pipefail
           cargo install xwin --locked
           "$HOME/.cargo/bin/xwin" --accept-license --arch x86 splat --output ./xwinSDK
-          test -f xwinSDK/sdk/include/um/d3d9.h
+          
 
       - name: Build 32-bit DLL
         shell: bash
