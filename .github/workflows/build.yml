@@ -44,21 +44,24 @@ jobs:
           make -f UnitOutline.mk V=1 CXX=clang-cl LD=/usr/lib/llvm-19/bin/lld-link
           test -s UnitOutline.dll
 
+            - name: Collect release DLL
+        shell: bash
+        run: |
+          mkdir -p out
+          cp UnitOutline.dll out/UnitOutline.dll
+
       - name: Build debug DLL (logs when a selected model is never drawn)
         shell: bash
         run: |
           set -euxo pipefail
-          mv UnitOutline.dll UnitOutline-release.dll
           make -f UnitOutline.mk clean
           make -f UnitOutline.mk CXX=clang-cl LD=/usr/lib/llvm-19/bin/lld-link CXXDEFS=/DOUTLINE_DEBUG
-          mv UnitOutline.dll UnitOutline-debug.dll
-          mv UnitOutline-release.dll UnitOutline.dll
+          cp UnitOutline.dll out/UnitOutline-debug.dll
 
       - uses: actions/upload-artifact@v4
         with:
           name: UnitOutline-x86
           path: |
-            UnitOutline.dll
-            UnitOutline-debug.dll
+            out
             addon/UnitOutline
           if-no-files-found: error
