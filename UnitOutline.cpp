@@ -55,7 +55,8 @@ namespace
     // ---- settings, pushed from the GUI addon
     struct Config
     {
-        bool  enable = true, mouseover = true, target = true;
+        bool  enable = true, players = true, npcs = true;
+        bool  src[2][3] = { { true, true, true }, { true, true, true } };   // [target, mouseover][hostile, neutral, friendly]
         float thickness = 2.0f, opacity = 1.0f;
         float hostile[3]  = { 1.0f, 0.1f, 0.1f };
         float neutral[3]  = { 1.0f, 1.0f, 0.0f };
@@ -64,19 +65,21 @@ namespace
 
     int __fastcall LuaConfig(void* L)
     {
-        double v[14];
-        for (int i = 0; i < 14; ++i) v[i] = GameToNumber(L, i + 1);
+        double v[20];
+        for (int i = 0; i < 20; ++i) v[i] = GameToNumber(L, i + 1);
         cfg.enable    = v[0] != 0;
-        cfg.mouseover = v[1] != 0;
-        cfg.target    = v[2] != 0;
-        cfg.thickness = static_cast<float>(v[3] < 0.5 ? 0.5 : v[3] > 6.0 ? 6.0 : v[3]);
-        cfg.opacity   = static_cast<float>(v[4] < 0.0 ? 0.0 : v[4] > 1.0 ? 1.0 : v[4]);
+        cfg.thickness = static_cast<float>(v[1] < 0.5 ? 0.5 : v[1] > 6.0 ? 6.0 : v[1]);
+        cfg.opacity   = static_cast<float>(v[2] < 0.0 ? 0.0 : v[2] > 1.0 ? 1.0 : v[2]);
         for (int i = 0; i < 3; ++i)
         {
-            cfg.hostile[i]  = static_cast<float>(v[5 + i]);
-            cfg.neutral[i]  = static_cast<float>(v[8 + i]);
-            cfg.friendly[i] = static_cast<float>(v[11 + i]);
+            cfg.hostile[i]  = static_cast<float>(v[3 + i]);
+            cfg.neutral[i]  = static_cast<float>(v[6 + i]);
+            cfg.friendly[i] = static_cast<float>(v[9 + i]);
+            cfg.src[0][i]   = v[12 + i] != 0;
+            cfg.src[1][i]   = v[15 + i] != 0;
         }
+        cfg.players = v[18] != 0;
+        cfg.npcs    = v[19] != 0;
         return 0;
     }
 
@@ -110,12 +113,14 @@ namespace
         return Valid(obj) ? obj : 0;
     }
 
-    void AddUnit(uint32_t obj, uint32_t player)
+    void AddUnit(uint32_t obj, uint32_t player, int source)
     {
         const int type = *reinterpret_cast<int*>(obj + 0x14);
-        if (type != 3 && type != 4) return;                       // unit or player
+        if (type == 4 ? !cfg.players : type == 3 ? !cfg.npcs : true) return;   // 3 unit, 4 player
         const int reaction = GameReaction(player, obj);            // 0 hated .. 6 revered
-        const float* rgb = reaction <= 2 ? cfg.hostile : reaction == 3 ? cfg.neutral : cfg.friendly;
+        const int group = reaction <= 2 ? 0 : reaction == 3 ? 1 : 2;
+        if (!cfg.src[source][group]) return;
+        const float* rgb = group == 0 ? cfg.hostile : group == 1 ? cfg.neutral : cfg.friendly;
         AddModel(*reinterpret_cast<uint32_t*>(obj + 0xD8), rgb, 0);
     }
 
@@ -125,10 +130,10 @@ namespace
         if (!cfg.enable) return;
         const uint32_t player = UnitObject("player");
         if (!player) return;
-        const uint32_t target = cfg.target ? UnitObject("target") : 0;
-        const uint32_t over   = cfg.mouseover ? UnitObject("mouseover") : 0;
-        if (target && target != player) AddUnit(target, player);
-        if (over && over != player && over != target) AddUnit(over, player);
+        const uint32_t target = UnitObject("target");
+        const uint32_t over   = UnitObject("mouseover");
+        if (target && target != player) AddUnit(target, player, 0);
+        if (over && over != player && over != target) AddUnit(over, player, 1);
     }
 
     int Find(uint32_t model)
