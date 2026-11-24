@@ -148,7 +148,7 @@ namespace
     bool g_stamped;       // mask holds this frame's silhouettes
 #ifdef OUTLINE_DEBUG
     // per-second counters, written to UnitOutline.log next to WoW.exe
-    struct Stats { unsigned frames, selected, batches, matched, draws, blendSkip, stamped; } st;
+    struct Stats { unsigned frames, selected, batches, matched, draws, stamped; } st;
     DWORD statTick;
 
     void Log(const char* text)
@@ -164,8 +164,8 @@ namespace
         char line[256];
         uint32_t tm = 0;
         if (g_n) tm = g_t[0].model;
-        sprintf(line, "frames=%u selected=%u batches=%u matched=%u draws=%u blendSkip=%u stamped=%u firstModel=%08X children=%d\n",
-                st.frames, st.selected, st.batches, st.matched, st.draws, st.blendSkip, st.stamped, tm, g_n);
+        sprintf(line, "frames=%u selected=%u batches=%u matched=%u draws=%u stamped=%u firstModel=%08X children=%d\n",
+                st.frames, st.selected, st.batches, st.matched, st.draws, st.stamped, tm, g_n);
         Log(line);
         st = Stats{};
     }
@@ -231,15 +231,12 @@ namespace
     // Re-issues the draw that just happened as a flat color into the mask.
     void Stamp(IDirect3DDevice9* d, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv, UINT si, UINT pc)
     {
-        DWORD blend, test;
-        d->GetRenderState(D3DRS_ALPHABLENDENABLE, &blend);
-#ifdef OUTLINE_DEBUG
-        if (blend) ++st.blendSkip;
-#endif
-        if (blend || !Ensure(d)) return;                           // translucent layers would fatten the outline
+        if (!Ensure(d)) return;
 #ifdef OUTLINE_DEBUG
         ++st.stamped;
 #endif
+        DWORD blend, test;
+        d->GetRenderState(D3DRS_ALPHABLENDENABLE, &blend);
         d->GetRenderState(D3DRS_ALPHATESTENABLE, &test);
 
         Saved s;
@@ -254,6 +251,12 @@ namespace
         d->SetRenderState(D3DRS_ZENABLE, FALSE);
         d->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
         d->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+        if (blend && !test)                                        // translucent layer: keep only its mostly-opaque texels
+        {
+            d->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
+            d->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATER);
+            d->SetRenderState(D3DRS_ALPHAREF, 0x80);
+        }
         d->SetRenderState(D3DRS_FOGENABLE, FALSE);
         d->SetRenderState(D3DRS_STENCILENABLE, FALSE);
         d->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
@@ -261,7 +264,7 @@ namespace
         d->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
         d->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TFACTOR);
         d->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
-        d->SetTextureStageState(0, D3DTSS_ALPHAARG1, test ? D3DTA_TEXTURE : D3DTA_TFACTOR);   // keep cutouts (hair, cloth edges)
+        d->SetTextureStageState(0, D3DTSS_ALPHAARG1, blend || test ? D3DTA_TEXTURE : D3DTA_TFACTOR);   // keep cutouts (hair, cloth edges)
         d->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
         d->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
         origDip(d, t, bv, mi, nv, si, pc);
