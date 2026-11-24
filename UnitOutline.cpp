@@ -9,6 +9,9 @@
 
 #include <cstdint>
 #include <cmath>
+#ifdef OUTLINE_DEBUG
+#include <cstdio>
+#endif
 
 #include "MinHook.h"
 
@@ -144,7 +147,28 @@ namespace
     UINT g_w, g_h;
     bool g_stamped;       // mask holds this frame's silhouettes
 #ifdef OUTLINE_DEBUG
-    bool g_hit;
+    // per-second counters, written to UnitOutline.log next to WoW.exe
+    struct Stats { unsigned frames, selected, batches, matched, draws, blendSkip, stamped; } st;
+    DWORD statTick;
+
+    void Log(const char* text)
+    {
+        if (FILE* f = fopen("UnitOutline.log", "a")) { fputs(text, f); fclose(f); }
+    }
+
+    void FlushStats()
+    {
+        const DWORD now = GetTickCount();
+        if (now - statTick < 1000) return;
+        statTick = now;
+        char line[256];
+        uint32_t tm = 0;
+        if (g_n) tm = g_t[0].model;
+        sprintf(line, "frames=%u selected=%u batches=%u matched=%u draws=%u blendSkip=%u stamped=%u firstModel=%08X children=%d\n",
+                st.frames, st.selected, st.batches, st.matched, st.draws, st.blendSkip, st.stamped, tm, g_n);
+        Log(line);
+        st = Stats{};
+    }
 #endif
 
     template <class T> void Release(T*& p) { if (p) { p->Release(); p = nullptr; } }
@@ -209,7 +233,13 @@ namespace
     {
         DWORD blend, test;
         d->GetRenderState(D3DRS_ALPHABLENDENABLE, &blend);
+#ifdef OUTLINE_DEBUG
+        if (blend) ++st.blendSkip;
+#endif
         if (blend || !Ensure(d)) return;                           // translucent layers would fatten the outline
+#ifdef OUTLINE_DEBUG
+        ++st.stamped;
+#endif
         d->GetRenderState(D3DRS_ALPHATESTENABLE, &test);
 
         Saved s;
@@ -321,7 +351,7 @@ namespace
         if (g_cur >= 0)
         {
 #ifdef OUTLINE_DEBUG
-            g_hit = true;
+            ++st.draws;
 #endif
             Stamp(d, t, bv, mi, nv, si, pc);
         }
@@ -331,7 +361,12 @@ namespace
     // The scene keeps the batch being drawn at +0x3300 and its model at +0x3310.
     inline void EnterBatch(void* scene)
     {
-        if (g_n) g_cur = Find(*reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(scene) + 0x3310));
+        if (!g_n) return;
+        g_cur = Find(*reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(scene) + 0x3310));
+#ifdef OUTLINE_DEBUG
+        ++st.batches;
+        if (g_cur >= 0) ++st.matched;
+#endif
     }
 
     template <int I> int __fastcall BatchDetour(void* scene, void*)
@@ -373,12 +408,11 @@ namespace
 
         Select();
 #ifdef OUTLINE_DEBUG
-        g_hit = false;
+        ++st.frames;
+        if (g_n) ++st.selected;
+        FlushStats();
 #endif
         const int r = origRenderWorld(self);
-#ifdef OUTLINE_DEBUG
-        if (g_n && !g_hit) OutputDebugStringA("UnitOutline: selected model was in no batch\n");
-#endif
         if (g_stamped && d) Composite(d);
         g_n = 0;
         return r;
