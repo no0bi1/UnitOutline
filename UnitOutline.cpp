@@ -94,16 +94,12 @@ namespace
 
     bool Valid(uint32_t p) { return p != 0 && (p & 1) == 0; }
 
-    void AddModel(uint32_t m, const float* rgb, int depth)
+    void AddModel(uint32_t m, const float* rgb)
     {
         if (!Valid(m) || g_n >= 16) return;
         Target& t = g_t[g_n++];
         t.model = m;
         t.rgb[0] = rgb[0]; t.rgb[1] = rgb[1]; t.rgb[2] = rgb[2];
-        // attachments (weapons, mount) hang off the model's child list: +0x1DC first, +0x1E4 next sibling
-        if (depth < 3)
-            for (uint32_t c = *reinterpret_cast<uint32_t*>(m + 0x1DC); Valid(c) && g_n < 16; c = *reinterpret_cast<uint32_t*>(c + 0x1E4))
-                AddModel(c, rgb, depth + 1);
     }
 
     uint32_t UnitObject(const char* token)
@@ -121,7 +117,7 @@ namespace
         const int group = reaction <= 2 ? 0 : reaction == 3 ? 1 : 2;
         if (!cfg.src[source][group]) return;
         const float* rgb = group == 0 ? cfg.hostile : group == 1 ? cfg.neutral : cfg.friendly;
-        AddModel(*reinterpret_cast<uint32_t*>(obj + 0xD8), rgb, 0);
+        AddModel(*reinterpret_cast<uint32_t*>(obj + 0xD8), rgb);
     }
 
     void Select()
