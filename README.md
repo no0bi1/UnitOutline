@@ -9,7 +9,7 @@ Reaction-colored silhouette outline on your target and mouseover unit for the Wo
 
 ## Install
 
-1. Get `UnitOutline.dll` from the Actions artifact (`UnitOutline-x86`) and load it like any other
+1. Get `UnitOutline.dll` from the Actions run's artifacts (uploaded as a plain file, not a zip) and load it like any other
    client DLL (same way as UnitXP SP3, for example).
 2. Copy `addon/UnitOutline` into `Interface/AddOns`.
 
