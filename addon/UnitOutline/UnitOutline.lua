@@ -2,7 +2,7 @@ BINDING_HEADER_UNITOUTLINE = "Unit Outline"
 BINDING_NAME_UNITOUTLINE_TOGGLE = "Toggle outline"
 
 local defaults = {
-    enable = 1, auto = 0, players = 1, npcs = 1, thickness = 2, opacity = 1,
+    enable = 1, auto = 0, autoMin = 2, players = 1, npcs = 1, thickness = 2, opacity = 1,
     tsrc = { 1, 1, 1 }, msrc = { 1, 1, 1 },
     hostile = { 1, 0.1, 0.1 }, neutral = { 1, 1, 0 }, friendly = { 0, 0.8, 0 },
 }
@@ -11,15 +11,16 @@ local panel, enableCheck
 local plates = {}
 local sent -- last enable value pushed to the DLL
 
--- smart mode: player in combat and more than one attackable, living, in-combat unit with a nameplate
+-- smart mode: player in combat and at least db.autoMin attackable, living, in-combat units with a nameplate
 local function Engaged()
     if not UnitAffectingCombat("player") then return false end
+    local need = UnitOutlineDB.autoMin or 2
     local n = 0
     for token in pairs(plates) do
         if UnitExists(token) and UnitCanAttack("player", token) and not UnitIsDead(token)
             and UnitAffectingCombat(token) then
             n = n + 1
-            if n > 1 then return true end
+            if n >= need then return true end
         end
     end
     return false
@@ -135,7 +136,31 @@ local function Build()
     title:SetText("Unit Outline")
 
     enableCheck = Check("UnitOutlineEnable", "Enable (keybind in Key Bindings)", -44, "enable")
-    Check("UnitOutlineAuto", "Auto: only in combat with 2+ enemy nameplates in view", -70, "auto")
+    local autoCheck = Check("UnitOutlineAuto", "Auto: only in combat with at least", -70, "auto")
+    local box = CreateFrame("EditBox", "UnitOutlineAutoMin", panel, "InputBoxTemplate")
+    box:SetWidth(28)
+    box:SetHeight(20)
+    box:SetAutoFocus(false)
+    box:SetNumeric(true)
+    box:SetMaxLetters(2)
+    box:SetPoint("LEFT", getglobal("UnitOutlineAutoText"), "RIGHT", 12, 0)
+    box:SetText(UnitOutlineDB.autoMin)
+    local function Commit()
+        local v = tonumber(box:GetText())
+        if not v or v < 1 then v = 1 end
+        UnitOutlineDB.autoMin = floor(v)
+        box:SetText(UnitOutlineDB.autoMin)
+        Apply()
+    end
+    box:SetScript("OnEnterPressed", function() Commit() this:ClearFocus() end)
+    box:SetScript("OnEscapePressed", function()
+        this:SetText(UnitOutlineDB.autoMin)
+        this:ClearFocus()
+    end)
+    box:SetScript("OnEditFocusLost", Commit)
+    local tail = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    tail:SetPoint("LEFT", box, "RIGHT", 6, 0)
+    tail:SetText("enemy nameplates in view")
     local h = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     h:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -108)
     h:SetText("Outline which units (click a swatch to recolor)")
