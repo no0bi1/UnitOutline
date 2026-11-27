@@ -1,6 +1,6 @@
 ## Interface: 11200
 ## Title: Unit Outline
-## Notes: Reaction-colored outline on your target and mouseover. Needs UnitOutline.dll.
+## Notes: Reaction-colored outline on your target and mouseover. Needs UnitOutline.dll and ClassicAPI.
 ## SavedVariables: UnitOutlineDB
 
 UnitOutline.lua

@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="UNITOUTLINE_TOGGLE" header="UNITOUTLINE">
+		UnitOutline_Toggle();
+	</Binding>
+</Bindings>
